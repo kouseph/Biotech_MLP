@@ -1,4 +1,3 @@
-import requests
 import matplotlib.pyplot as plt
 from datetime import datetime
 import finnhub 
@@ -22,7 +21,7 @@ def plot_finnhub_library_data(symbol):
     
     if not series_data:
         print(f"No Current Ratio data available for {symbol}.")
-        return
+        return[0,0,0]
 
     series_data.sort(key=lambda x: datetime.strptime(x['period'], '%Y-%m-%d'))
 
@@ -34,12 +33,12 @@ def plot_finnhub_library_data(symbol):
 
 
 VanEck = ["LLY", "NVS", "MRK", "NVO", "GSK", "BMY", "JNJ", "MCK", "PFE", "AZN", "ABBV", "COR", "SNY", "ZTS", "HLN", "TAK", "TEVA", "VTRS", "JAZZ", "AXSM", "ELAN", "CORT", "OGN", "BHC", "PRGO"]
+tickers = [ "AAPL", "NVDA", "PFE", "ISRG", "JPM", "GS", "XOM", "SLB", "CAT", "LMT", "TSLA", "SBUX", "KO", "COST", "NEE", "DUK", "LIN", "NEM", "AMT", "PLD", "VZ", "TMUS", "FDX", "BA", "DIS" ]
 
 ans = []
-for i in VanEck:
+for i in tickers:
     ans.append(plot_finnhub_library_data(i))
 
-plt.title(f'Annual Current Ratio (via Finnhub Library)')
 plt.figure(figsize=(10, 5))
 for i in ans:
     plt.plot(i[0], i[1], marker='s', label=i[2])
