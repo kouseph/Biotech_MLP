@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import finnhub 
 
+hello world, this is garbage
 
 from dotenv import load_dotenv
 import os
