@@ -33,45 +33,4 @@ for ticker in tickers:
     # Final formatting
     plt.tight_layout()
     
-    # This will open a new window for every ticker. 
-    # Warning: Running all 25 at once might be overwhelming!
-    plt.show()
-
-
-
-
-
-
-
-
-# import yfinance as yf
-# import pandas as pd
-#
-# tickers = ["LLY", "NVS", "MRK", "NVO", "GSK", "BMY", "JNJ", "MCK", "PFE", "AZN", 
-#            "ABBV", "COR", "SNY", "ZTS", "HLN", "TAK", "TEVA", "VTRS", "JAZZ", 
-#            "AXSM", "ELAN", "CORT", "OGN", "BHC", "PRGO"]
-#
-# start_date = "2016-01-01"
-# end_date = "2020-12-31"
-#
-# all_data = []
-#
-# for ticker in tickers:
-#     print(f"Fetching data for {ticker}...")
-#     stock = yf.Ticker(ticker)
-#     df = stock.history(start=start_date, end=end_date, interval="1mo")
-#     
-#     df['Ticker'] = ticker
-#     df['Timestamp'] = df.index
-#     
-#     # Standard yfinance doesn't provide VWAP/Transactions by default on monthly intervals
-#     # We calculate a proxy for VWAP: (Typical Price * Volume) / Total Volume
-#     df['VWAP_Proxy'] = ((df['High'] + df['Low'] + df['Close']) / 3 * df['Volume']).cumsum() / df['Volume'].cumsum()
-#     
-#     all_data.append(df)
-#
-# # Combine and export
-# final_df = pd.concat(all_data)
-# print(final_df)
-# # final_df.to_csv("Historical_Stock_Data_2016_2020.csv")
-# # print("CSV Generated successfully!")
+    plt.savefig(f"./plots/{ticker}_stock_data.png")
