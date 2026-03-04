@@ -67,7 +67,6 @@ plt.plot(range(len(y_test)), y_test.values, label='Actual True Data', marker='o'
 # MLP Predictions in Orange
 plt.plot(range(len(y_test)), predictions, label='MLP Predictions', marker='x', linestyle='--', color='orange')
 
-# Add titles, labels, and legends
 plt.title('Actual vs Predicted Monthly Returns (Test Data)')
 plt.xlabel('Months (in Test Period)')
 plt.ylabel('Monthly Return')
@@ -75,8 +74,4 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 
-# Show the plot or save it!
 plt.show()
-
-
-
