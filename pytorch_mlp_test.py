@@ -5,32 +5,22 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-
-# 1. Define the MLP Architecture
+# MLP ARCHITECTURE 
 class StockPredictorMLP(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(StockPredictorMLP, self).__init__()
         
-        # f vector -> g (hidden layer)
+        # Input -> Hidden
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.sig = nn.Sigmoid() # Activation function for the hidden layer
+        self.relu = nn.ReLU()
         
-        # g -> h vector (output layer)
-        # Output is size 1 since we are predicting a single continuous value (e.g., next month's return)
+        # Hidden -> Output
         self.fc2 = nn.Linear(hidden_size, 1)
 
     def forward(self, f):
-        # Forward pass: f -> g -> h
-        g = self.fc1(f)
-        g = self.sig(g)
-        h = self.fc2(g)
+        g = self.relu(self.fc1(f))  # ReLU applied
+        h = self.fc2(g)             # No activation for regression
         return h
-
-# 2. Simulate Preprocessing Yuka's Features (The "f" vector)
-def preprocess_features(ret_1m, ret3m, ret_6m, vol_3m, vol_6m, volume_z):
-    # Combine into our f vector
-    f_vector = [ret_1m, ret3m, ret_6m, vol_3m, vol_6m, volume_z]
-    return torch.tensor(f_vector, dtype=torch.float32)
 
 # --- Setup and Training ---
 
@@ -46,17 +36,28 @@ criterion = nn.MSELoss() # Mean Squared Error to compare 'h' to the 'truth'
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 
-# tensor-ify X and y
-df = pd.read_csv("X.csv")
-X_np = df.values
-X_tensor = torch.tensor(X_np, dtype=torch.float32)
+# tensor-ify all csvs
+X_train = pd.read_csv("X_train_scaled.csv")
+X_train_np = X_train.values
+X_train_tensor = torch.tensor(X_train_np, dtype=torch.float32)
 
-df_y = pd.read_csv("y.csv")
-y_np = df_y.values
-y_tensor = torch.tensor(y_np, dtype=torch.float32)
+X_test = pd.read_csv("X_test_scaled.csv")
+X_test_np = X_test.values
+X_test_tensor = torch.tensor(X_test_np, dtype=torch.float32)
 
-print(X_tensor.shape)
-print(y_tensor.shape)
+y_train = pd.read_csv("y_train.csv")
+y_train_np = y_train.values
+y_train_tensor = torch.tensor(y_train_np, dtype=torch.float32)
+
+y_test = pd.read_csv("y_test.csv")
+y_test_np = y_test.values
+y_test_tensor = torch.tensor(y_test_np, dtype=torch.float32)
+
+print(X_train_tensor.shape)
+print(X_test_tensor.shape)
+print(y_train_tensor.shape)
+print(y_test_tensor.shape)
+
 print("Starting Training Loop...\n")
 
 for epoch in range(EPOCHS):
@@ -66,12 +67,12 @@ for epoch in range(EPOCHS):
     optimizer.zero_grad()
     
     # Forward pass (Get 'h')
-    prediction_h = model(X_tensor)
+    prediction_h = model(X_train_tensor)
     
     # Calculate loss (Compare 'h' to 'truth')
-    loss = criterion(prediction_h, y_tensor)
+    loss = criterion(prediction_h, y_train_tensor)
     
-    # Backward pass (Backpropagation)
+    # Backward pass (Backpropagation)what kind of 
     loss.backward()
     
     # Update weights
@@ -83,3 +84,28 @@ for epoch in range(EPOCHS):
         print(f"Epoch {epoch+1}/{EPOCHS} | Average Loss: {total_loss/5:.6f}")
 
 print("\nTraining Complete!")
+
+
+# TESTING 
+model.eval()
+
+with torch.no_grad():
+    test_predictions = model(X_test_tensor)
+    test_loss = criterion(test_predictions, y_test_tensor)
+
+print(f"\nTest MSE: {test_loss.item():.6f}")
+
+print("test pred shape", test_predictions.shape)
+print("y test shape", y_test_tensor.shape)
+
+# Convert tensors to numpy
+pred_np = test_predictions.numpy().flatten()
+true_np = y_test_tensor.numpy().flatten()
+
+# Directional accuracy
+direction_pred = np.sign(pred_np)
+direction_true = np.sign(true_np)
+
+accuracy = np.mean(direction_pred == direction_true)
+
+print(f"Directional Accuracy: {accuracy:.4f}")
