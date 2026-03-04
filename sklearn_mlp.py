@@ -33,7 +33,7 @@ X_test_scaled = scaler.transform(X_test)
 
 mlp_reg = MLPRegressor(
     hidden_layer_sizes=(50, 25), 
-    activation='relu', 
+    activation='logistic', 
     solver='adam', 
     max_iter=1000,   # Increased iterations so it has time to learn
     random_state=42
@@ -75,3 +75,5 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout()
 
 plt.show()
+
+plt.savefig("./plots/demo_plot.png")
