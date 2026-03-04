@@ -119,4 +119,3 @@ pd.DataFrame(X_test_scaled, columns=features).to_csv("X_test_scaled.csv", index=
 pd.Series(y_train, name="target").to_csv("y_train.csv", index=False)
 pd.Series(y_test, name="target").to_csv("y_test.csv", index=False)
 
-
