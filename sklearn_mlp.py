@@ -5,8 +5,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
 
 # --- 1. LOAD AND CLEAN THE DATA ---
-X = pd.read_csv('X.csv')
-y = pd.read_csv('y.csv')
+X = pd.read_csv('X_test_scaled.csv')
+y = pd.read_csv('y_test.csv')
 
 data = pd.concat([X, y], axis=1)
 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
@@ -25,7 +26,7 @@ class StockPredictorMLP(nn.Module):
 # --- Setup and Training ---
 
 # Hyperparameters
-INPUT_FEATURES = 6 # Based on Yuka's list
+INPUT_FEATURES = 48 # Based on Yuka's list
 HIDDEN_NODES = 32  # Size of 'g'
 LEARNING_RATE = 0.001
 EPOCHS = 100
@@ -109,3 +110,24 @@ direction_true = np.sign(true_np)
 accuracy = np.mean(direction_pred == direction_true)
 
 print(f"Directional Accuracy: {accuracy:.4f}")
+
+
+# --- 6. PLOT THE RESULTS ---
+plt.figure(figsize=(10, 6))
+
+# Actual True Data in Blue
+plt.plot(range(len(y_test)), y_test.values, label='Actual True Data', marker='o', linestyle='-', color='blue')
+
+# MLP Predictions in Orange
+plt.plot(range(len(y_test)), test_predictions, label='MLP Predictions', marker='x', linestyle='--', color='orange')
+
+plt.title('Actual vs Predicted Monthly Returns (Test Data)')
+plt.xlabel('Months (in Test Period)')
+plt.ylabel('Monthly Return')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+
+plt.show()
+
+plt.savefig("./plots/demo_plot.png")

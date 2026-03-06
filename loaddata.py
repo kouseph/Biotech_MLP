@@ -22,13 +22,19 @@ print(f"{len(valid_tickers)} / {len(tickers)} tickers are valid")
 # download monthly data for IBB ETF
 ibb = yf.download("IBB", start="2014-07-01", end="2025-12-31", interval="1mo", auto_adjust=True)
 
+# Flatten multiindex columns
+ibb.columns = ibb.columns.get_level_values(0)
+
+# Move Date from index into column
 ibb = ibb.reset_index()
-# Calculate 1-month return
+
+# Now compute return
 ibb["ibb_ret_1m"] = ibb["Close"].pct_change(1)
 
-ibb = ibb[['Date', 'ibb_ret_1m']]
+# Keep only what you need
+ibb = ibb[["Date", "ibb_ret_1m"]]
 
-print(ibb.head())
+print("ibb cols", ibb.columns)
 
 start_date = "2014-02-01"
 end_date = "2025-12-31"
@@ -44,9 +50,10 @@ price_data = yf.download(
 
 all_data = []
 
-for ticker in tickers:
+for ticker in valid_tickers:
     df = price_data[ticker].copy()
-
+    df = df.reset_index()
+    
     # Features
     df["ret_1m"] = df["Close"].pct_change(1)
     df["ret_3m"] = df["Close"].pct_change(3)
@@ -60,16 +67,21 @@ for ticker in tickers:
     ) / df["Volume"].rolling(12).std()
 
     df["ticker"] = ticker
+    
     all_data.append(df)
     
-dataset = pd.concat(all_data).reset_index()
-print(dataset.head())
+dataset = pd.concat(all_data, ignore_index=True)
+print("Premerge dataset cols", dataset.columns)
 
 
 # merge the ETF data on date
-# dataset = dataset.merge(ibb, how="left", left_on="Date", right_index=True)
+dataset = dataset.merge(
+    ibb[["Date", "ibb_ret_1m"]],
+    how="left",
+    on="Date"
+)
 
-print(dataset.head())
+print("Post merge dataset", dataset.columns)
 # Target (next month return)
 dataset["target"] = (
     dataset.groupby("ticker")["ret_1m"].shift(-1)
@@ -78,19 +90,22 @@ dataset["target"] = (
 # OHE the ticker names
 dataset = pd.get_dummies(dataset, columns=["ticker"])
 
+ticker_cols = [col for col in dataset.columns if col.startswith("ticker_")]
 
 dataset = dataset.dropna()
 dataset = dataset[
     (dataset["Date"] >= "2015-01-01") &
     (dataset["Date"] <= "2025-12-31")
-]
+] 
 # print(dataset.head())
 
 # Feature selection
 features = [
     "ret_1m", "ret_3m", "ret_6m",
-    "vol_3m", "vol_6m", "volume_z"
+    "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m"
 ]
+
+features = features + ticker_cols
 
 # Split 
 split_date = "2022-01-01"
