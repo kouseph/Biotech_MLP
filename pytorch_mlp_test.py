@@ -116,10 +116,10 @@ print(f"Directional Accuracy: {accuracy:.4f}")
 plt.figure(figsize=(10, 6))
 
 # Actual True Data in Blue
-plt.plot(range(len(y_test)), y_test.values, label='Actual True Data', marker='o', linestyle='-', color='blue')
+plt.plot(range(50), true_np[:50], label='Actual True Data', marker='o', linestyle='-', color='blue')
 
 # MLP Predictions in Orange
-plt.plot(range(len(y_test)), test_predictions, label='MLP Predictions', marker='x', linestyle='--', color='orange')
+plt.plot(range(50), pred_np[:50], label='MLP Predictions', marker='x', linestyle='--', color='orange')
 
 plt.title('Actual vs Predicted Monthly Returns (Test Data)')
 plt.xlabel('Months (in Test Period)')
