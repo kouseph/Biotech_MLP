@@ -11,9 +11,13 @@ with open('tickers.txt', 'r') as f:
 
 valid_tickers = []
 for t in tickers:
-    info = yf.Ticker(t).history(period="max")
-    if not info.empty:
-        valid_tickers.append(t)
+    try:
+        ticker = yf.Ticker(t)
+        if ticker.fast_info is not None:
+            valid_tickers.append(t)
+    except Exception:
+        print(t)
+        pass
 
 print(valid_tickers)
 print(f"{len(valid_tickers)} / {len(tickers)} tickers are valid")
@@ -100,37 +104,41 @@ dataset = dataset[
 # print(dataset.head())
 
 # Feature selection
-features = [
+num_features = [
     "ret_1m", "ret_3m", "ret_6m",
     "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m"
 ]
+ohe_features = ticker_cols
 
-features = features + ticker_cols
+features = num_features + ohe_features
 
 # Split 
 split_date = "2022-01-01"
 train = dataset[dataset["Date"] < split_date]
 test  = dataset[dataset["Date"] >= split_date]
 
-X_train = train[features].values
-y_train = train["target"].values
-
-X_test  = test[features].values
-y_test  = test["target"].values
-
-print(train.shape)
-print(test.shape)
-
 # Scale - no need to scale y 
 scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+
+train_scaled = train.copy()
+test_scaled = test.copy()
+
+# only scale numeric
+train_scaled[num_features] = scaler.fit_transform(train[num_features])
+test_scaled[num_features] = scaler.transform(test[num_features])
+
+# split into X and y
+X_train = train_scaled[features].values
+y_train = train["target"].values
+
+X_test = test_scaled[features].values
+y_test = test["target"].values
 
 print(dataset.head())
 
 # Save
-pd.DataFrame(X_train_scaled, columns=features).to_csv("X_train_scaled.csv", index=False)
-pd.DataFrame(X_test_scaled, columns=features).to_csv("X_test_scaled.csv", index=False)
+pd.DataFrame(X_train, columns=features).to_csv("X_train_scaled.csv", index=False)
+pd.DataFrame(X_test, columns=features).to_csv("X_test_scaled.csv", index=False)
 pd.Series(y_train, name="target").to_csv("y_train.csv", index=False)
 pd.Series(y_test, name="target").to_csv("y_test.csv", index=False)
 
