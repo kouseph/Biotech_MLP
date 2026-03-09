@@ -4,7 +4,10 @@ import torch.optim as optim
 import pandas as pd
 import numpy as np
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 # --- 1. Load CSVs ---
 X_train = pd.read_csv("X_train.csv")
 X_test  = pd.read_csv("X_test.csv")
@@ -28,7 +31,10 @@ class StockTop20MLP(nn.Module):
     def __init__(self, input_size):
         super().__init__()
         # Hidden layer 1: input_size -> 256
+<<<<<<< HEAD
         print(input_size)
+=======
+>>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
         self.fc1 = nn.Linear(input_size, 256)
         self.relu1 = nn.ReLU()
         
@@ -58,7 +64,11 @@ pos_weight = (y_train_tensor == 0).sum() / (y_train_tensor == 1).sum()
 criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
+<<<<<<< HEAD
 epochs = 1000
+=======
+epochs = 500
+>>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 
 # --- 4. Training loop ---
 for epoch in range(epochs):
@@ -73,6 +83,7 @@ for epoch in range(epochs):
         print(f"Epoch {epoch+1}/{epochs} | Loss: {loss.item():.4f}")
 
 # --- 5. Evaluation ---
+<<<<<<< HEAD
 # model.eval()
 # with torch.no_grad():
 #     logits = model(X_test_tensor)
@@ -141,6 +152,18 @@ hits = y_true[topk_indices].sum().item()  # number of actual top20 stocks in top
 hit_rate = hits / K
 print(hits, K)
 print(f"Top-{int(top_percent*100)}% hit rate: {hit_rate:.3f}")
+=======
+model.eval()
+with torch.no_grad():
+    logits = model(X_test_tensor)
+    preds_prob = torch.sigmoid(logits)  # convert logits to probabilities
+    
+    threshold = 0.1  # top-20% prevalence
+    preds_label = (preds_prob >= threshold).float()
+    
+    accuracy = (preds_label == y_test_tensor).float().mean()
+    print("Top-20% Classification Accuracy:", accuracy.item())
+>>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 
 
 import matplotlib.pyplot as plt
@@ -166,6 +189,7 @@ plt.title("Top-10% Classification Confusion Matrix")
 plt.show()
 
 # # --- 3. Optional: Monthly Accuracy ---
+<<<<<<< HEAD
 # If you have a 'month' column in X_test
 if 'month' in X_test.columns:
     X_test['pred'] = preds_label.numpy()
@@ -179,3 +203,18 @@ if 'month' in X_test.columns:
     plt.ylabel("Accuracy")
     plt.grid(True, alpha=0.3)
     plt.show()
+=======
+# # If you have a 'month' column in X_test
+# if 'month' in X_test.columns:
+#     X_test['pred'] = preds_label.numpy()
+#     X_test['true'] = y_test_tensor.numpy()
+#     monthly_acc = X_test.groupby('month').apply(lambda df: (df['pred']==df['true']).mean())
+    
+#     plt.figure(figsize=(12,4))
+#     monthly_acc.plot(marker='o')
+#     plt.title("Monthly Accuracy of Top-20% Prediction")
+#     plt.xlabel("Month")
+#     plt.ylabel("Accuracy")
+#     plt.grid(True, alpha=0.3)
+#     plt.show()
+>>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
