@@ -22,24 +22,18 @@ for t in tickers:
 print(f"{len(valid_tickers)} / {len(tickers)} tickers are valid")
 
 # download monthly data for IBB ETF
-ibb = yf.download("IBB", start="2009-01-01", end="2025-12-31", interval="1mo", auto_adjust=True)
-
-# Flatten multiindex columns
+ibb = yf.download("IBB", start="2009-01-01", end="2026-01-01", interval="1mo", auto_adjust=True)
 ibb.columns = ibb.columns.get_level_values(0)
-
-# Move Date from index into column
 ibb = ibb.reset_index()
 
-# Now compute return
+# compute return
 ibb["ibb_ret_1m"] = ibb["Close"].pct_change(1)
 
-# Keep only what you need
 ibb = ibb[["Date", "ibb_ret_1m"]]
 
-print("ibb cols", ibb.columns)
-
+# download raw stock data
 start_date = "2009-01-01"
-end_date = "2025-12-31"
+end_date = "2026-01-01"
 
 price_data = yf.download(
     valid_tickers,
@@ -51,10 +45,18 @@ price_data = yf.download(
 )
 
 all_data = []
+print(price_data.shape)
+print(price_data.head())
 
 for ticker in valid_tickers:
     df = price_data[ticker].copy()
     df = df.reset_index()
+
+    # if df["Close"].isna().all() or df["Volume"].isna().all():
+    #     print(f"{ticker} has only NaNs, skipping.")
+    #     continue
+    # if df[["Close", "Volume"]].isna().any().any():
+    #     print(f"{ticker} has some missing values.")
     
     # Features
     df["ret_1m"] = df["Close"].pct_change(1)
@@ -74,7 +76,9 @@ for ticker in valid_tickers:
     all_data.append(df)
     
 dataset = pd.concat(all_data, ignore_index=True)
-print("Premerge dataset cols", dataset.columns)
+
+# Ensure 'Date' column is datetime
+dataset['Date'] = pd.to_datetime(dataset['Date'])
 
 # merge the ETF data on date
 dataset = dataset.merge(
@@ -83,51 +87,40 @@ dataset = dataset.merge(
     on="Date"
 )
 
-print("Post merge dataset", dataset.columns)
-# Target (next month return)
+# calculate target (1 month in future)
 dataset["target"] = (
     dataset.groupby("ticker")["ret_1m"].shift(-1)
 )
 
-# OHE the ticker names
-dataset = pd.get_dummies(dataset, columns=["ticker"], dtype=float)
-
-ticker_cols = [col for col in dataset.columns if col.startswith("ticker_")]
-
-# pd.DataFrame(dataset).to_csv("dataset.csv", index=False)
-
-dataset = dataset.dropna()
-
-dataset = dataset[
-    (dataset["Date"] >= "2010-01-01") &
-    (dataset["Date"] <= "2025-12-31")
-] 
-
-# Ensure 'Date' column is datetime
-dataset['Date'] = pd.to_datetime(dataset['Date'])
-
-# Optional: extract month for grouping later
-# dataset['month'] = dataset['Date'].dt.to_period('M')
-
-# Sort by date (and ticker if you want consistent order within month)
-dataset = dataset.sort_values(['Date'] + ticker_cols).reset_index(drop=True)
-
-print("Sorted dataset length:", dataset.shape)
-
-
 # Top 20% flag per month
 dataset['top20'] = dataset.groupby('Date')['target'].transform(
-    lambda x: (x >= x.quantile(0.9)).astype(float)
+    lambda x: (x >= x.quantile(0.8)).astype(float)
 )
 
-pd.DataFrame(dataset).to_csv("dataset.csv", index=False)
+# OHE the ticker names
+dataset = pd.get_dummies(dataset, columns=["ticker"], dtype=float)
+ticker_cols = [col for col in dataset.columns if col.startswith("ticker_")]
 
+# not sure 
+dataset = dataset.dropna()
+
+# drop rows outside of time frame 
+# start = "2010-01-01"
+start = "2020-01-01"
+end = "2026-01-01"
+dataset = dataset[
+    (dataset["Date"] >= start) &
+    (dataset["Date"] <= end)
+] 
+
+pd.DataFrame(dataset).to_csv("yfinancedata.csv", index=False)
+
+# Sort by date (and ticker if you want consistent order within month)
+# dataset = dataset.sort_values(['Date'] + ticker_cols).reset_index(drop=True)
 
 print("Full dataset length", dataset.shape)
 
-
-
-# Feature selection
+# now, exporting into usable files for model 
 num_features = [
     "ret_1m", "ret_3m", "ret_6m", "ret_12m",
     "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m"
@@ -136,14 +129,14 @@ ohe_features = ticker_cols
 
 features = num_features + ohe_features
 
-
 # Split 
-split_date = "2022-01-01"
+split_date = "2025-01-01"
 train = dataset[dataset["Date"] < split_date]
 test  = dataset[dataset["Date"] >= split_date]
 
-train['month'] = train['Date'].dt.to_period('M')
-test['month'] = test['Date'].dt.to_period('M')
+test['month'] = pd.to_datetime(test['Date'])
+test_months = test["month"].values
+pd.Series(test_months, name="month").to_csv("test_months.csv", index=False)
 
 print("train", train.shape)
 print("test", test.shape)

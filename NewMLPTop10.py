@@ -4,6 +4,7 @@ import torch.optim as optim
 import pandas as pd
 import numpy as np
 
+
 # --- 1. Load CSVs ---
 X_train = pd.read_csv("X_train.csv")
 X_test  = pd.read_csv("X_test.csv")
@@ -27,6 +28,7 @@ class StockTop20MLP(nn.Module):
     def __init__(self, input_size):
         super().__init__()
         # Hidden layer 1: input_size -> 256
+        print(input_size)
         self.fc1 = nn.Linear(input_size, 256)
         self.relu1 = nn.ReLU()
         
@@ -56,7 +58,7 @@ pos_weight = (y_train_tensor == 0).sum() / (y_train_tensor == 1).sum()
 criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-epochs = 500
+epochs = 1000
 
 # --- 4. Training loop ---
 for epoch in range(epochs):
@@ -71,16 +73,74 @@ for epoch in range(epochs):
         print(f"Epoch {epoch+1}/{epochs} | Loss: {loss.item():.4f}")
 
 # --- 5. Evaluation ---
+# model.eval()
+# with torch.no_grad():
+#     logits = model(X_test_tensor)
+#     preds_prob = torch.sigmoid(logits)  # convert logits to probabilities
+    
+#     threshold = 0.25  # top-20% prevalence
+#     preds_label = (preds_prob >= threshold).float()
+    
+#     accuracy = (preds_label == y_test_tensor).float().mean()
+#     print("Top-20% Classification Accuracy:", accuracy.item())
+
+
+def top20_hit_rate(group):
+    n = len(group)  # total stocks that month
+    k = int(n * 0.2)  # number of top picks
+    if k == 0:  # handle months with very few stocks
+        k = 1
+    top = group.nlargest(k, "pred_prob")
+    hits = top["true"].sum()  # numerator
+    return pd.Series({
+        "hits": hits,
+        "top_k": k  # denominator
+    })
+def precision_at_k(group):
+
+    k = int(len(group) * 0.2)
+    
+    top = group.nlargest(k, "pred_prob")
+    
+    return top["true"].sum() / k
+
 model.eval()
+top_percent = 0.2
 with torch.no_grad():
     logits = model(X_test_tensor)
-    preds_prob = torch.sigmoid(logits)  # convert logits to probabilities
-    
-    threshold = 0.1  # top-20% prevalence
-    preds_label = (preds_prob >= threshold).float()
-    
-    accuracy = (preds_label == y_test_tensor).float().mean()
-    print("Top-20% Classification Accuracy:", accuracy.item())
+    preds_prob = torch.sigmoid(logits).squeeze()  # convert logits to probabilities
+    preds_label = (preds_prob >= top_percent).float()
+
+test_months = pd.read_csv("test_months.csv")["month"]
+results = pd.DataFrame({
+    "month": test_months,
+    "true": y_test['target'],
+    "pred_prob": preds_prob.squeeze().numpy()
+})
+
+groups = results.groupby("month")
+
+monthly_hits = groups.apply(top20_hit_rate)
+print(monthly_hits)
+
+
+
+
+
+
+# --- 2. Determine K ---  # top 20%
+K = int(top_percent * len(preds_prob))
+
+# --- 3. Get indices of top K predictions ---
+topk_indices = torch.topk(preds_prob, K).indices
+
+# --- 4. Count hits ---
+y_true = y_test_tensor.squeeze()
+hits = y_true[topk_indices].sum().item()  # number of actual top20 stocks in top K
+
+hit_rate = hits / K
+print(hits, K)
+print(f"Top-{int(top_percent*100)}% hit rate: {hit_rate:.3f}")
 
 
 import matplotlib.pyplot as plt
@@ -106,16 +166,16 @@ plt.title("Top-10% Classification Confusion Matrix")
 plt.show()
 
 # # --- 3. Optional: Monthly Accuracy ---
-# # If you have a 'month' column in X_test
-# if 'month' in X_test.columns:
-#     X_test['pred'] = preds_label.numpy()
-#     X_test['true'] = y_test_tensor.numpy()
-#     monthly_acc = X_test.groupby('month').apply(lambda df: (df['pred']==df['true']).mean())
+# If you have a 'month' column in X_test
+if 'month' in X_test.columns:
+    X_test['pred'] = preds_label.numpy()
+    X_test['true'] = y_test_tensor.numpy()
+    monthly_acc = X_test.groupby('month').apply(lambda df: (df['pred']==df['true']).mean())
     
-#     plt.figure(figsize=(12,4))
-#     monthly_acc.plot(marker='o')
-#     plt.title("Monthly Accuracy of Top-20% Prediction")
-#     plt.xlabel("Month")
-#     plt.ylabel("Accuracy")
-#     plt.grid(True, alpha=0.3)
-#     plt.show()
+    plt.figure(figsize=(12,4))
+    monthly_acc.plot(marker='o')
+    plt.title("Monthly Accuracy of Top-20% Prediction")
+    plt.xlabel("Month")
+    plt.ylabel("Accuracy")
+    plt.grid(True, alpha=0.3)
+    plt.show()
