@@ -47,6 +47,7 @@ price_data = yf.download(
 all_data = []
 print(price_data.shape)
 print(price_data.head())
+MAX_FUNDAMENTAL_AGE_DAYS = 180
 
 def first_present_value(row, candidate_cols):
     for col in candidate_cols:
@@ -85,13 +86,14 @@ for ticker in valid_tickers:
         df["Volume"] - df["Volume"].rolling(12).mean()
     ) / df["Volume"].rolling(12).std()
 
-    # Fundamental features (quarterly), forward-filled to monthly rows
+    # Fundamental features (quarterly), aligned to monthly rows
     tkr = yf.Ticker(ticker)
-    quarterly_frames = []
+    cash_quarterly = pd.DataFrame(columns=["cash_report_date", "total_cash", "total_cash_log", "total_cash_ge_1b", "total_cash_trend_4q"])
+    lfcf_quarterly = pd.DataFrame(columns=["lfcf_report_date", "lfcf", "lfcf_trend_4q", "lfcf_improving_4q"])
 
     try:
-        qbs = tkr.quarterly_balance_sheet.T.reset_index().rename(columns={"index": "Date"})
-        qbs["Date"] = pd.to_datetime(qbs["Date"])
+        qbs = tkr.quarterly_balance_sheet.T.reset_index().rename(columns={"index": "cash_report_date"})
+        qbs["cash_report_date"] = pd.to_datetime(qbs["cash_report_date"])
         qbs["total_cash"] = qbs.apply(
             lambda row: first_present_value(
                 row,
@@ -104,13 +106,16 @@ for ticker in valid_tickers:
             ),
             axis=1,
         )
-        quarterly_frames.append(qbs[["Date", "total_cash"]])
+        qbs["total_cash_trend_4q"] = qbs["total_cash"].rolling(4).apply(compute_trend, raw=False)
+        qbs["total_cash_log"] = np.log1p(qbs["total_cash"].clip(lower=0))
+        qbs["total_cash_ge_1b"] = (qbs["total_cash"] >= 1_000_000_000).astype(float)
+        cash_quarterly = qbs[["cash_report_date", "total_cash", "total_cash_log", "total_cash_ge_1b", "total_cash_trend_4q"]]
     except Exception:
         pass
 
     try:
-        qcf = tkr.quarterly_cashflow.T.reset_index().rename(columns={"index": "Date"})
-        qcf["Date"] = pd.to_datetime(qcf["Date"])
+        qcf = tkr.quarterly_cashflow.T.reset_index().rename(columns={"index": "lfcf_report_date"})
+        qcf["lfcf_report_date"] = pd.to_datetime(qcf["lfcf_report_date"])
         qcf["lfcf"] = qcf.apply(
             lambda row: first_present_value(
                 row,
@@ -121,59 +126,50 @@ for ticker in valid_tickers:
             ),
             axis=1,
         )
-        quarterly_frames.append(qcf[["Date", "lfcf"]])
+        qcf["lfcf_trend_4q"] = qcf["lfcf"].rolling(4).apply(compute_trend, raw=False)
+        qcf["lfcf_improving_4q"] = qcf["lfcf"] - qcf["lfcf"].shift(3)
+        lfcf_quarterly = qcf[["lfcf_report_date", "lfcf", "lfcf_trend_4q", "lfcf_improving_4q"]]
     except Exception:
         pass
 
-    if quarterly_frames:
-        fundamentals = quarterly_frames[0]
-        for qdf in quarterly_frames[1:]:
-            fundamentals = fundamentals.merge(qdf, on="Date", how="outer")
-        fundamentals = fundamentals.sort_values("Date")
-
-        if "total_cash" in fundamentals.columns:
-            fundamentals["total_cash_trend_4q"] = fundamentals["total_cash"].rolling(4).apply(compute_trend, raw=False)
-            fundamentals["total_cash_log"] = np.log1p(fundamentals["total_cash"].clip(lower=0))
-            fundamentals["total_cash_ge_1b"] = (fundamentals["total_cash"] >= 1_000_000_000).astype(float)
-        else:
-            fundamentals["total_cash"] = np.nan
-            fundamentals["total_cash_trend_4q"] = np.nan
-            fundamentals["total_cash_log"] = np.nan
-            fundamentals["total_cash_ge_1b"] = 0.0
-
-        if "lfcf" in fundamentals.columns:
-            fundamentals["lfcf_trend_4q"] = fundamentals["lfcf"].rolling(4).apply(compute_trend, raw=False)
-            fundamentals["lfcf_improving_4q"] = fundamentals["lfcf"] - fundamentals["lfcf"].shift(3)
-        else:
-            fundamentals["lfcf"] = np.nan
-            fundamentals["lfcf_trend_4q"] = np.nan
-            fundamentals["lfcf_improving_4q"] = np.nan
-
+    df = df.sort_values("Date")
+    if not cash_quarterly.empty:
         df = pd.merge_asof(
-            df.sort_values("Date"),
-            fundamentals[
-                [
-                    "Date",
-                    "total_cash",
-                    "total_cash_log",
-                    "total_cash_ge_1b",
-                    "total_cash_trend_4q",
-                    "lfcf",
-                    "lfcf_trend_4q",
-                    "lfcf_improving_4q",
-                ]
-            ].sort_values("Date"),
-            on="Date",
+            df,
+            cash_quarterly.sort_values("cash_report_date"),
+            left_on="Date",
+            right_on="cash_report_date",
             direction="backward",
         )
     else:
+        df["cash_report_date"] = pd.NaT
         df["total_cash"] = np.nan
         df["total_cash_log"] = np.nan
-        df["total_cash_ge_1b"] = 0.0
+        df["total_cash_ge_1b"] = np.nan
         df["total_cash_trend_4q"] = np.nan
+
+    if not lfcf_quarterly.empty:
+        df = pd.merge_asof(
+            df,
+            lfcf_quarterly.sort_values("lfcf_report_date"),
+            left_on="Date",
+            right_on="lfcf_report_date",
+            direction="backward",
+        )
+    else:
+        df["lfcf_report_date"] = pd.NaT
         df["lfcf"] = np.nan
         df["lfcf_trend_4q"] = np.nan
         df["lfcf_improving_4q"] = np.nan
+
+    df["days_since_total_cash_report"] = (df["Date"] - df["cash_report_date"]).dt.days
+    df["days_since_lfcf_report"] = (df["Date"] - df["lfcf_report_date"]).dt.days
+
+    stale_cash = df["days_since_total_cash_report"].isna() | (df["days_since_total_cash_report"] > MAX_FUNDAMENTAL_AGE_DAYS)
+    stale_lfcf = df["days_since_lfcf_report"].isna() | (df["days_since_lfcf_report"] > MAX_FUNDAMENTAL_AGE_DAYS)
+
+    df.loc[stale_cash, ["total_cash", "total_cash_log", "total_cash_ge_1b", "total_cash_trend_4q"]] = np.nan
+    df.loc[stale_lfcf, ["lfcf", "lfcf_trend_4q", "lfcf_improving_4q"]] = np.nan
 
     df["ticker"] = ticker
     
@@ -194,12 +190,7 @@ dataset = dataset.merge(
 # Missing-value indicators for fundamentals (let model learn data availability)
 dataset["total_cash_missing"] = dataset["total_cash"].isna().astype(float)
 dataset["lfcf_missing"] = dataset["lfcf"].isna().astype(float)
-
-# Forward-fill fundamentals within each ticker, then fill remaining gaps
-for col in ["total_cash", "total_cash_log", "total_cash_trend_4q", "lfcf", "lfcf_trend_4q", "lfcf_improving_4q"]:
-    dataset[col] = dataset.groupby("ticker")[col].ffill()
-    dataset[col] = dataset[col].fillna(0.0)
-dataset["total_cash_ge_1b"] = dataset["total_cash_ge_1b"].fillna(0.0)
+dataset["fundamentals_available"] = ((dataset["total_cash_missing"] == 0) & (dataset["lfcf_missing"] == 0)).astype(float)
 
 # calculate target (1 month in future)
 dataset["target"] = (
@@ -240,10 +231,11 @@ continuous_num_features = [
     "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m",
     "total_cash", "total_cash_log", "total_cash_trend_4q",
     "lfcf", "lfcf_trend_4q", "lfcf_improving_4q",
+    "days_since_total_cash_report", "days_since_lfcf_report",
 ]
 binary_num_features = [
     "total_cash_ge_1b",
-    "total_cash_missing", "lfcf_missing"
+    "total_cash_missing", "lfcf_missing", "fundamentals_available"
 ]
 num_features = continuous_num_features + binary_num_features
 ohe_features = ticker_cols
@@ -255,9 +247,28 @@ split_date = "2025-01-01"
 train = dataset[dataset["Date"] < split_date]
 test  = dataset[dataset["Date"] >= split_date]
 
+# Impute fundamentals/age features from train medians (avoid zero-imputing continuous data)
+continuous_fundamental_features = [
+    "total_cash", "total_cash_log", "total_cash_trend_4q",
+    "lfcf", "lfcf_trend_4q", "lfcf_improving_4q",
+    "days_since_total_cash_report", "days_since_lfcf_report",
+]
+median_fill_values = train[continuous_fundamental_features].median()
+train.loc[:, continuous_fundamental_features] = train[continuous_fundamental_features].fillna(median_fill_values)
+test.loc[:, continuous_fundamental_features] = test[continuous_fundamental_features].fillna(median_fill_values)
+
+train.loc[:, ["total_cash_ge_1b", "total_cash_missing", "lfcf_missing", "fundamentals_available"]] = (
+    train[["total_cash_ge_1b", "total_cash_missing", "lfcf_missing", "fundamentals_available"]].fillna(0.0)
+)
+test.loc[:, ["total_cash_ge_1b", "total_cash_missing", "lfcf_missing", "fundamentals_available"]] = (
+    test[["total_cash_ge_1b", "total_cash_missing", "lfcf_missing", "fundamentals_available"]].fillna(0.0)
+)
+
+test = test.copy()
 test['month'] = pd.to_datetime(test['Date'])
 test_months = test["month"].values
 pd.Series(test_months, name="month").to_csv("test_months.csv", index=False)
+pd.Series(test["fundamentals_available"].values, name="fundamentals_available").to_csv("test_fundamentals_available.csv", index=False)
 
 print("train", train.shape)
 print("test", test.shape)

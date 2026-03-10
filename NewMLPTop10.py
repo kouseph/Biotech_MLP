@@ -19,6 +19,9 @@ required_fundamental_features = [
     "lfcf",
     "lfcf_trend_4q",
     "lfcf_improving_4q",
+    "days_since_total_cash_report",
+    "days_since_lfcf_report",
+    "fundamentals_available",
 ]
 missing_required = [f for f in required_fundamental_features if f not in X_train.columns]
 if missing_required:
@@ -128,10 +131,12 @@ with torch.no_grad():
     preds_label = (preds_prob >= top_percent).float()
 
 test_months = pd.read_csv("test_months.csv")["month"]
+test_fundamentals_available = pd.read_csv("test_fundamentals_available.csv")["fundamentals_available"]
 results = pd.DataFrame({
     "month": test_months,
     "true": y_test['target'],
-    "pred_prob": preds_prob.squeeze().numpy()
+    "pred_prob": preds_prob.squeeze().numpy(),
+    "fundamentals_available": test_fundamentals_available
 })
 
 groups = results.groupby("month")
@@ -157,6 +162,20 @@ hits = y_true[topk_indices].sum().item()  # number of actual top20 stocks in top
 hit_rate = hits / K
 print(hits, K)
 print(f"Top-{int(top_percent*100)}% hit rate: {hit_rate:.3f}")
+
+results_fund = results[results["fundamentals_available"] == 1]
+if len(results_fund) > 0:
+    monthly_hits_fund = results_fund.groupby("month").apply(top20_hit_rate)
+    fund_hits = monthly_hits_fund["hits"].sum()
+    fund_k = monthly_hits_fund["top_k"].sum()
+    fund_hit_rate = fund_hits / fund_k if fund_k > 0 else np.nan
+    print(
+        f"Fundamentals-available subset hit rate "
+        f"(monthly top-{int(top_percent*100)}% picks): {fund_hit_rate:.3f} "
+        f"[hits={fund_hits:.0f}, picks={fund_k:.0f}]"
+    )
+else:
+    print("No test rows have both total_cash and lfcf available within freshness window.")
 
 
 import matplotlib.pyplot as plt
