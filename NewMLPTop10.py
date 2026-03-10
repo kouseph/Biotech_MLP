@@ -11,6 +11,22 @@ X_test  = pd.read_csv("X_test.csv")
 y_train = pd.read_csv("y_train.csv")
 y_test  = pd.read_csv("y_test.csv")
 
+required_fundamental_features = [
+    "total_cash",
+    "total_cash_log",
+    "total_cash_ge_1b",
+    "total_cash_trend_4q",
+    "lfcf",
+    "lfcf_trend_4q",
+    "lfcf_improving_4q",
+]
+missing_required = [f for f in required_fundamental_features if f not in X_train.columns]
+if missing_required:
+    raise ValueError(
+        f"Missing new cashflow/cash features in X_train.csv: {missing_required}. "
+        "Run loaddata.py first to regenerate datasets."
+    )
+
 # Convert to numpy arrays
 X_train_np = X_train.values.astype(np.float32)
 X_test_np  = X_test.values.astype(np.float32)
@@ -44,11 +60,11 @@ class StockTop20MLP(nn.Module):
         self.fc4 = nn.Linear(64, 1)
 
     def forward(self, x):
-        x = self.relu1(self.fc1(x))
-        x = self.relu2(self.fc2(x))
-        x = self.relu3(self.fc3(x))
-        x = self.fc4(x)  # raw logits for BCEWithLogitsLoss
-        return x
+        x_1 = self.relu1(self.fc1(x))
+        x_2 = self.relu2(self.fc2(x_1))
+        x_3 = self.relu3(self.fc3(x_2))
+        x_4 = self.fc4(x_3)  # raw logits for BCEWithLogitsLoss
+        return x_4
 
 # --- 3. Initialize model, loss, optimizer ---
 model = StockTop20MLP(input_size=X_train_tensor.shape[1])

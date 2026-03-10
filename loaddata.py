@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 # load tickers 
@@ -47,6 +48,20 @@ all_data = []
 print(price_data.shape)
 print(price_data.head())
 
+def first_present_value(row, candidate_cols):
+    for col in candidate_cols:
+        if col in row.index and pd.notna(row[col]):
+            return row[col]
+    return np.nan
+
+def compute_trend(series):
+    clean = pd.Series(series).dropna()
+    if len(clean) < 2:
+        return np.nan
+    x = np.arange(len(clean), dtype=float)
+    y = clean.values.astype(float)
+    return np.polyfit(x, y, 1)[0]
+
 for ticker in valid_tickers:
     df = price_data[ticker].copy()
     df = df.reset_index()
@@ -70,6 +85,96 @@ for ticker in valid_tickers:
         df["Volume"] - df["Volume"].rolling(12).mean()
     ) / df["Volume"].rolling(12).std()
 
+    # Fundamental features (quarterly), forward-filled to monthly rows
+    tkr = yf.Ticker(ticker)
+    quarterly_frames = []
+
+    try:
+        qbs = tkr.quarterly_balance_sheet.T.reset_index().rename(columns={"index": "Date"})
+        qbs["Date"] = pd.to_datetime(qbs["Date"])
+        qbs["total_cash"] = qbs.apply(
+            lambda row: first_present_value(
+                row,
+                [
+                    "Total Cash",
+                    "Cash Cash Equivalents And Short Term Investments",
+                    "Cash And Cash Equivalents",
+                    "Cash Financial",
+                ],
+            ),
+            axis=1,
+        )
+        quarterly_frames.append(qbs[["Date", "total_cash"]])
+    except Exception:
+        pass
+
+    try:
+        qcf = tkr.quarterly_cashflow.T.reset_index().rename(columns={"index": "Date"})
+        qcf["Date"] = pd.to_datetime(qcf["Date"])
+        qcf["lfcf"] = qcf.apply(
+            lambda row: first_present_value(
+                row,
+                [
+                    "Levered Free Cash Flow",
+                    "Free Cash Flow",
+                ],
+            ),
+            axis=1,
+        )
+        quarterly_frames.append(qcf[["Date", "lfcf"]])
+    except Exception:
+        pass
+
+    if quarterly_frames:
+        fundamentals = quarterly_frames[0]
+        for qdf in quarterly_frames[1:]:
+            fundamentals = fundamentals.merge(qdf, on="Date", how="outer")
+        fundamentals = fundamentals.sort_values("Date")
+
+        if "total_cash" in fundamentals.columns:
+            fundamentals["total_cash_trend_4q"] = fundamentals["total_cash"].rolling(4).apply(compute_trend, raw=False)
+            fundamentals["total_cash_log"] = np.log1p(fundamentals["total_cash"].clip(lower=0))
+            fundamentals["total_cash_ge_1b"] = (fundamentals["total_cash"] >= 1_000_000_000).astype(float)
+        else:
+            fundamentals["total_cash"] = np.nan
+            fundamentals["total_cash_trend_4q"] = np.nan
+            fundamentals["total_cash_log"] = np.nan
+            fundamentals["total_cash_ge_1b"] = 0.0
+
+        if "lfcf" in fundamentals.columns:
+            fundamentals["lfcf_trend_4q"] = fundamentals["lfcf"].rolling(4).apply(compute_trend, raw=False)
+            fundamentals["lfcf_improving_4q"] = fundamentals["lfcf"] - fundamentals["lfcf"].shift(3)
+        else:
+            fundamentals["lfcf"] = np.nan
+            fundamentals["lfcf_trend_4q"] = np.nan
+            fundamentals["lfcf_improving_4q"] = np.nan
+
+        df = pd.merge_asof(
+            df.sort_values("Date"),
+            fundamentals[
+                [
+                    "Date",
+                    "total_cash",
+                    "total_cash_log",
+                    "total_cash_ge_1b",
+                    "total_cash_trend_4q",
+                    "lfcf",
+                    "lfcf_trend_4q",
+                    "lfcf_improving_4q",
+                ]
+            ].sort_values("Date"),
+            on="Date",
+            direction="backward",
+        )
+    else:
+        df["total_cash"] = np.nan
+        df["total_cash_log"] = np.nan
+        df["total_cash_ge_1b"] = 0.0
+        df["total_cash_trend_4q"] = np.nan
+        df["lfcf"] = np.nan
+        df["lfcf_trend_4q"] = np.nan
+        df["lfcf_improving_4q"] = np.nan
+
     df["ticker"] = ticker
     
     all_data.append(df)
@@ -85,6 +190,16 @@ dataset = dataset.merge(
     how="left",
     on="Date"
 )
+
+# Missing-value indicators for fundamentals (let model learn data availability)
+dataset["total_cash_missing"] = dataset["total_cash"].isna().astype(float)
+dataset["lfcf_missing"] = dataset["lfcf"].isna().astype(float)
+
+# Forward-fill fundamentals within each ticker, then fill remaining gaps
+for col in ["total_cash", "total_cash_log", "total_cash_trend_4q", "lfcf", "lfcf_trend_4q", "lfcf_improving_4q"]:
+    dataset[col] = dataset.groupby("ticker")[col].ffill()
+    dataset[col] = dataset[col].fillna(0.0)
+dataset["total_cash_ge_1b"] = dataset["total_cash_ge_1b"].fillna(0.0)
 
 # calculate target (1 month in future)
 dataset["target"] = (
@@ -119,11 +234,18 @@ pd.DataFrame(dataset).to_csv("yfinancedata.csv", index=False)
 
 print("Full dataset length", dataset.shape)
 
-# now, exporting into usable files for model 
-num_features = [
+# now, exporting into usable files for model
+continuous_num_features = [
     "ret_1m", "ret_3m", "ret_6m", "ret_12m",
-    "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m"
+    "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m",
+    "total_cash", "total_cash_log", "total_cash_trend_4q",
+    "lfcf", "lfcf_trend_4q", "lfcf_improving_4q",
 ]
+binary_num_features = [
+    "total_cash_ge_1b",
+    "total_cash_missing", "lfcf_missing"
+]
+num_features = continuous_num_features + binary_num_features
 ohe_features = ticker_cols
 
 features = num_features + ohe_features
@@ -146,9 +268,9 @@ scaler = StandardScaler()
 train_scaled = train.copy()
 test_scaled = test.copy()
 
-# only scale numeric
-train_scaled[num_features] = scaler.fit_transform(train[num_features])
-test_scaled[num_features] = scaler.transform(test[num_features])
+# only scale continuous numeric features (keep binary flags as 0/1)
+train_scaled[continuous_num_features] = scaler.fit_transform(train[continuous_num_features])
+test_scaled[continuous_num_features] = scaler.transform(test[continuous_num_features])
 
 # split into X and y
 X_train = train_scaled[features].values
@@ -158,6 +280,8 @@ X_test = test_scaled[features].values
 y_test = test["top20"].values
 
 print(dataset.head())
+
+
 
 # Save
 pd.DataFrame(X_train, columns=features).to_csv("X_train.csv", index=False)
