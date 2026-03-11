@@ -48,6 +48,7 @@ all_data = []
 print(price_data.shape)
 print(price_data.head())
 MAX_FUNDAMENTAL_AGE_DAYS = 180
+FUNDAMENTAL_REPORT_LAG_DAYS = 45
 
 def first_present_value(row, candidate_cols):
     for col in candidate_cols:
@@ -66,6 +67,7 @@ def compute_trend(series):
 for ticker in valid_tickers:
     df = price_data[ticker].copy()
     df = df.reset_index()
+    df["Date"] = pd.to_datetime(df["Date"]).astype("datetime64[ns]")
 
     # if df["Close"].isna().all() or df["Volume"].isna().all():
     #     print(f"{ticker} has only NaNs, skipping.")
@@ -92,12 +94,33 @@ for ticker in valid_tickers:
 
     # Fundamental features (quarterly), aligned to monthly rows
     tkr = yf.Ticker(ticker)
-    cash_quarterly = pd.DataFrame(columns=["cash_report_date", "total_cash", "total_cash_log", "total_cash_ge_1b", "total_cash_trend_4q"])
-    lfcf_quarterly = pd.DataFrame(columns=["lfcf_report_date", "lfcf", "lfcf_trend_4q", "lfcf_improving_4q"])
+    cash_quarterly = pd.DataFrame(
+        columns=[
+            "cash_report_date",
+            "cash_available_date",
+            "total_cash",
+            "total_cash_log",
+            "total_cash_ge_1b",
+            "total_cash_trend_4q",
+            "total_cash_qoq_pct",
+            "total_cash_yoy_pct",
+        ]
+    )
+    lfcf_quarterly = pd.DataFrame(
+        columns=[
+            "lfcf_report_date",
+            "lfcf_available_date",
+            "lfcf",
+            "lfcf_trend_4q",
+            "lfcf_improving_4q",
+            "lfcf_qoq_change",
+            "lfcf_yoy_change",
+        ]
+    )
 
     try:
         qbs = tkr.quarterly_balance_sheet.T.reset_index().rename(columns={"index": "cash_report_date"})
-        qbs["cash_report_date"] = pd.to_datetime(qbs["cash_report_date"])
+        qbs["cash_report_date"] = pd.to_datetime(qbs["cash_report_date"]).astype("datetime64[ns]")
         qbs["total_cash"] = qbs.apply(
             lambda row: first_present_value(
                 row,
@@ -113,13 +136,30 @@ for ticker in valid_tickers:
         qbs["total_cash_trend_4q"] = qbs["total_cash"].rolling(4).apply(compute_trend, raw=False)
         qbs["total_cash_log"] = np.log1p(qbs["total_cash"].clip(lower=0))
         qbs["total_cash_ge_1b"] = (qbs["total_cash"] >= 1_000_000_000).astype(float)
-        cash_quarterly = qbs[["cash_report_date", "total_cash", "total_cash_log", "total_cash_ge_1b", "total_cash_trend_4q"]]
+        qbs = qbs.sort_values("cash_report_date")
+        qbs["cash_available_date"] = (
+            qbs["cash_report_date"] + pd.Timedelta(days=FUNDAMENTAL_REPORT_LAG_DAYS)
+        ).astype("datetime64[ns]")
+        qbs["total_cash_qoq_pct"] = qbs["total_cash"].pct_change(1)
+        qbs["total_cash_yoy_pct"] = qbs["total_cash"].pct_change(4)
+        cash_quarterly = qbs[
+            [
+                "cash_report_date",
+                "cash_available_date",
+                "total_cash",
+                "total_cash_log",
+                "total_cash_ge_1b",
+                "total_cash_trend_4q",
+                "total_cash_qoq_pct",
+                "total_cash_yoy_pct",
+            ]
+        ]
     except Exception:
         pass
 
     try:
         qcf = tkr.quarterly_cashflow.T.reset_index().rename(columns={"index": "lfcf_report_date"})
-        qcf["lfcf_report_date"] = pd.to_datetime(qcf["lfcf_report_date"])
+        qcf["lfcf_report_date"] = pd.to_datetime(qcf["lfcf_report_date"]).astype("datetime64[ns]")
         qcf["lfcf"] = qcf.apply(
             lambda row: first_present_value(
                 row,
@@ -132,7 +172,23 @@ for ticker in valid_tickers:
         )
         qcf["lfcf_trend_4q"] = qcf["lfcf"].rolling(4).apply(compute_trend, raw=False)
         qcf["lfcf_improving_4q"] = qcf["lfcf"] - qcf["lfcf"].shift(3)
-        lfcf_quarterly = qcf[["lfcf_report_date", "lfcf", "lfcf_trend_4q", "lfcf_improving_4q"]]
+        qcf = qcf.sort_values("lfcf_report_date")
+        qcf["lfcf_available_date"] = (
+            qcf["lfcf_report_date"] + pd.Timedelta(days=FUNDAMENTAL_REPORT_LAG_DAYS)
+        ).astype("datetime64[ns]")
+        qcf["lfcf_qoq_change"] = qcf["lfcf"].diff(1)
+        qcf["lfcf_yoy_change"] = qcf["lfcf"].diff(4)
+        lfcf_quarterly = qcf[
+            [
+                "lfcf_report_date",
+                "lfcf_available_date",
+                "lfcf",
+                "lfcf_trend_4q",
+                "lfcf_improving_4q",
+                "lfcf_qoq_change",
+                "lfcf_yoy_change",
+            ]
+        ]
     except Exception:
         pass
 
@@ -142,38 +198,63 @@ for ticker in valid_tickers:
             df,
             cash_quarterly.sort_values("cash_report_date"),
             left_on="Date",
-            right_on="cash_report_date",
+            right_on="cash_available_date",
             direction="backward",
         )
     else:
         df["cash_report_date"] = pd.NaT
+        df["cash_available_date"] = pd.NaT
         df["total_cash"] = np.nan
         df["total_cash_log"] = np.nan
         df["total_cash_ge_1b"] = np.nan
         df["total_cash_trend_4q"] = np.nan
+        df["total_cash_qoq_pct"] = np.nan
+        df["total_cash_yoy_pct"] = np.nan
 
     if not lfcf_quarterly.empty:
         df = pd.merge_asof(
             df,
             lfcf_quarterly.sort_values("lfcf_report_date"),
             left_on="Date",
-            right_on="lfcf_report_date",
+            right_on="lfcf_available_date",
             direction="backward",
         )
     else:
         df["lfcf_report_date"] = pd.NaT
+        df["lfcf_available_date"] = pd.NaT
         df["lfcf"] = np.nan
         df["lfcf_trend_4q"] = np.nan
         df["lfcf_improving_4q"] = np.nan
+        df["lfcf_qoq_change"] = np.nan
+        df["lfcf_yoy_change"] = np.nan
 
-    df["days_since_total_cash_report"] = (df["Date"] - df["cash_report_date"]).dt.days
-    df["days_since_lfcf_report"] = (df["Date"] - df["lfcf_report_date"]).dt.days
+    df["days_since_total_cash_report"] = (df["Date"] - df["cash_available_date"]).dt.days
+    df["days_since_lfcf_report"] = (df["Date"] - df["lfcf_available_date"]).dt.days
 
     stale_cash = df["days_since_total_cash_report"].isna() | (df["days_since_total_cash_report"] > MAX_FUNDAMENTAL_AGE_DAYS)
     stale_lfcf = df["days_since_lfcf_report"].isna() | (df["days_since_lfcf_report"] > MAX_FUNDAMENTAL_AGE_DAYS)
 
-    df.loc[stale_cash, ["total_cash", "total_cash_log", "total_cash_ge_1b", "total_cash_trend_4q"]] = np.nan
-    df.loc[stale_lfcf, ["lfcf", "lfcf_trend_4q", "lfcf_improving_4q"]] = np.nan
+    df.loc[
+        stale_cash,
+        [
+            "total_cash",
+            "total_cash_log",
+            "total_cash_ge_1b",
+            "total_cash_trend_4q",
+            "total_cash_qoq_pct",
+            "total_cash_yoy_pct",
+        ],
+    ] = np.nan
+    df.loc[
+        stale_lfcf,
+        [
+            "lfcf",
+            "lfcf_trend_4q",
+            "lfcf_improving_4q",
+            "lfcf_qoq_change",
+            "lfcf_yoy_change",
+        ],
+    ] = np.nan
 
     df["ticker"] = ticker
     
@@ -195,6 +276,8 @@ dataset = dataset.merge(
 dataset["total_cash_missing"] = dataset["total_cash"].isna().astype(float)
 dataset["lfcf_missing"] = dataset["lfcf"].isna().astype(float)
 dataset["fundamentals_available"] = ((dataset["total_cash_missing"] == 0) & (dataset["lfcf_missing"] == 0)).astype(float)
+dataset["fundamental_recency_days"] = dataset[["days_since_total_cash_report", "days_since_lfcf_report"]].min(axis=1)
+dataset["lfcf_to_total_cash"] = dataset["lfcf"] / dataset["total_cash"].replace(0, np.nan)
 
 # calculate target (1 month in future)
 dataset["target"] = (
@@ -211,8 +294,20 @@ dataset["target"] = (
 dataset = pd.get_dummies(dataset, columns=["ticker"], dtype=float)
 ticker_cols = [col for col in dataset.columns if col.startswith("ticker_")]
 
-# not sure 
-dataset = dataset.dropna()
+# Drop only rows that are unusable for supervised learning target/price signals.
+essential_monthly_features = [
+    "ret_1m",
+    "ret_3m",
+    "ret_6m",
+    "ret_12m",
+    "vol_3m",
+    "vol_6m",
+    "volume_z",
+    "ibb_ret_1m",
+    "vol_ratio",
+    "recent_vol",
+]
+dataset = dataset.dropna(subset=essential_monthly_features + ["target"])
 
 # drop rows outside of time frame 
 # start = "2010-01-01"
@@ -235,8 +330,11 @@ continuous_num_features = [
     "ret_1m", "ret_3m", "ret_6m", "ret_12m",
     "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m",
     "total_cash", "total_cash_log", "total_cash_trend_4q",
-    "lfcf", "lfcf_trend_4q", "lfcf_improving_4q",
-    "days_since_total_cash_report", "days_since_lfcf_report", "vol_ratio", "recent_vol"
+    "total_cash_qoq_pct", "total_cash_yoy_pct",
+    "lfcf", "lfcf_trend_4q", "lfcf_improving_4q", "lfcf_qoq_change", "lfcf_yoy_change",
+    "lfcf_to_total_cash",
+    "days_since_total_cash_report", "days_since_lfcf_report", "fundamental_recency_days",
+    "vol_ratio", "recent_vol",
 ]
 binary_num_features = [
     "total_cash_ge_1b",
@@ -252,13 +350,33 @@ split_date = "2025-01-01"
 train = dataset[dataset["Date"] < split_date]
 test  = dataset[dataset["Date"] >= split_date]
 
+# Robustify quarterly dynamic features against extreme outliers.
+dynamic_feature_clip_cols = [
+    "total_cash_qoq_pct",
+    "total_cash_yoy_pct",
+    "lfcf_qoq_change",
+    "lfcf_yoy_change",
+    "lfcf_improving_4q",
+    "lfcf_to_total_cash",
+]
+for col in dynamic_feature_clip_cols:
+    if col in train.columns:
+        low = train[col].quantile(0.01)
+        high = train[col].quantile(0.99)
+        if pd.notna(low) and pd.notna(high):
+            train.loc[:, col] = train[col].clip(low, high)
+            test.loc[:, col] = test[col].clip(low, high)
+
 # Impute fundamentals/age features from train medians (avoid zero-imputing continuous data)
 continuous_fundamental_features = [
     "total_cash", "total_cash_log", "total_cash_trend_4q",
-    "lfcf", "lfcf_trend_4q", "lfcf_improving_4q",
-    "days_since_total_cash_report", "days_since_lfcf_report",
+    "total_cash_qoq_pct", "total_cash_yoy_pct",
+    "lfcf", "lfcf_trend_4q", "lfcf_improving_4q", "lfcf_qoq_change", "lfcf_yoy_change",
+    "lfcf_to_total_cash",
+    "days_since_total_cash_report", "days_since_lfcf_report", "fundamental_recency_days",
 ]
 median_fill_values = train[continuous_fundamental_features].median()
+median_fill_values = median_fill_values.fillna(0.0)
 train.loc[:, continuous_fundamental_features] = train[continuous_fundamental_features].fillna(median_fill_values)
 test.loc[:, continuous_fundamental_features] = test[continuous_fundamental_features].fillna(median_fill_values)
 
@@ -269,11 +387,19 @@ test.loc[:, ["total_cash_ge_1b", "total_cash_missing", "lfcf_missing", "fundamen
     test[["total_cash_ge_1b", "total_cash_missing", "lfcf_missing", "fundamentals_available"]].fillna(0.0)
 )
 
+# Stabilize numeric matrix for modeling: remove inf and fill any remaining NaNs
+train.loc[:, continuous_num_features] = train[continuous_num_features].replace([np.inf, -np.inf], np.nan)
+test.loc[:, continuous_num_features] = test[continuous_num_features].replace([np.inf, -np.inf], np.nan)
+continuous_fill_values = train[continuous_num_features].median().fillna(0.0)
+train.loc[:, continuous_num_features] = train[continuous_num_features].fillna(continuous_fill_values)
+test.loc[:, continuous_num_features] = test[continuous_num_features].fillna(continuous_fill_values)
+
 test = test.copy()
 test['month'] = pd.to_datetime(test['Date'])
 test_months = test["month"].values
 pd.Series(test_months, name="month").to_csv("test_months.csv", index=False)
 pd.Series(test["fundamentals_available"].values, name="fundamentals_available").to_csv("test_fundamentals_available.csv", index=False)
+pd.Series(test["fundamental_recency_days"].values, name="fundamental_recency_days").to_csv("test_fundamental_recency_days.csv", index=False)
 
 print("train", train.shape)
 print("test", test.shape)
