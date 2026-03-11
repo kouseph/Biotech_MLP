@@ -22,13 +22,7 @@ for t in tickers:
 print(f"{len(valid_tickers)} / {len(tickers)} tickers are valid")
 
 # download monthly data for IBB ETF
-<<<<<<< HEAD
 ibb = yf.download("IBB", start="2009-01-01", end="2026-01-01", interval="1mo", auto_adjust=True)
-=======
-ibb = yf.download("IBB", start="2009-01-01", end="2025-12-31", interval="1mo", auto_adjust=True)
-
-# Flatten multiindex columns
->>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 ibb.columns = ibb.columns.get_level_values(0)
 ibb = ibb.reset_index()
 
@@ -37,16 +31,9 @@ ibb["ibb_ret_1m"] = ibb["Close"].pct_change(1)
 
 ibb = ibb[["Date", "ibb_ret_1m"]]
 
-<<<<<<< HEAD
 # download raw stock data
 start_date = "2009-01-01"
 end_date = "2026-01-01"
-=======
-print("ibb cols", ibb.columns)
-
-start_date = "2009-01-01"
-end_date = "2025-12-31"
->>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 
 price_data = yf.download(
     valid_tickers,
@@ -90,12 +77,9 @@ for ticker in valid_tickers:
     
 dataset = pd.concat(all_data, ignore_index=True)
 
-<<<<<<< HEAD
 # Ensure 'Date' column is datetime
 dataset['Date'] = pd.to_datetime(dataset['Date'])
 
-=======
->>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 # merge the ETF data on date
 dataset = dataset.merge(
     ibb[["Date", "ibb_ret_1m"]],
@@ -108,22 +92,15 @@ dataset["target"] = (
     dataset.groupby("ticker")["ret_1m"].shift(-1)
 )
 
-<<<<<<< HEAD
 # Top 20% flag per month
 dataset['top20'] = dataset.groupby('Date')['target'].transform(
     lambda x: (x >= x.quantile(0.8)).astype(float)
 )
-=======
-# OHE the ticker names
-dataset = pd.get_dummies(dataset, columns=["ticker"], dtype=float)
->>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 
 # OHE the ticker names
 dataset = pd.get_dummies(dataset, columns=["ticker"], dtype=float)
 ticker_cols = [col for col in dataset.columns if col.startswith("ticker_")]
 
-<<<<<<< HEAD
-# not sure 
 dataset = dataset.dropna()
 
 # drop rows outside of time frame 
@@ -143,69 +120,22 @@ pd.DataFrame(dataset).to_csv("yfinancedata.csv", index=False)
 print("Full dataset length", dataset.shape)
 
 # now, exporting into usable files for model 
-=======
-# pd.DataFrame(dataset).to_csv("dataset.csv", index=False)
-
-dataset = dataset.dropna()
-
-dataset = dataset[
-    (dataset["Date"] >= "2010-01-01") &
-    (dataset["Date"] <= "2025-12-31")
-] 
-
-# Ensure 'Date' column is datetime
-dataset['Date'] = pd.to_datetime(dataset['Date'])
-
-# Optional: extract month for grouping later
-# dataset['month'] = dataset['Date'].dt.to_period('M')
-
-# Sort by date (and ticker if you want consistent order within month)
-dataset = dataset.sort_values(['Date'] + ticker_cols).reset_index(drop=True)
-
-print("Sorted dataset length:", dataset.shape)
-
-
-# Top 20% flag per month
-dataset['top20'] = dataset.groupby('Date')['target'].transform(
-    lambda x: (x >= x.quantile(0.9)).astype(float)
-)
-
-pd.DataFrame(dataset).to_csv("dataset.csv", index=False)
-
-
-print("Full dataset length", dataset.shape)
-
-
-
-# Feature selection
->>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 num_features = [
     "ret_1m", "ret_3m", "ret_6m", "ret_12m",
     "vol_3m", "vol_6m", "volume_z", "ibb_ret_1m"
 ]
 ohe_features = ticker_cols
-<<<<<<< HEAD
 
 features = num_features + ohe_features
-=======
-
-features = num_features + ohe_features
-
->>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 
 # Split 
 split_date = "2025-01-01"
 train = dataset[dataset["Date"] < split_date]
 test  = dataset[dataset["Date"] >= split_date]
 
-<<<<<<< HEAD
 test['month'] = pd.to_datetime(test['Date'])
 test_months = test["month"].values
 pd.Series(test_months, name="month").to_csv("test_months.csv", index=False)
-=======
-train['month'] = train['Date'].dt.to_period('M')
-test['month'] = test['Date'].dt.to_period('M')
->>>>>>> 204f1fe73d6973a9084ea76ff830f1021c4059bd
 
 print("train", train.shape)
 print("test", test.shape)
