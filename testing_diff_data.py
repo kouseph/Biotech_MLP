@@ -216,6 +216,27 @@ def plot_residual_hist(y_true: np.ndarray, pred_map: dict[str, np.ndarray]) -> N
     plt.close(fig)
 
 
+def plot_predictions_by_variant(y_true: np.ndarray, pred_map: dict[str, np.ndarray]) -> None:
+    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+    keys = list(pred_map.keys())
+    n = min(300, len(y_true))
+    idx = np.arange(n)
+
+    for ax, k in zip(axes, keys):
+        y_pred = pred_map[k][:n]
+        ax.plot(idx, y_true[:n], label="Actual", linewidth=1.8)
+        ax.plot(idx, y_pred, label="Predicted", linewidth=1.6, alpha=0.85)
+        ax.set_title(k)
+        ax.set_ylabel("Volatility")
+        ax.grid(alpha=0.25)
+        ax.legend(loc="upper right")
+
+    axes[-1].set_xlabel("Test sample index")
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "predictions_all_three_variants.png", dpi=180)
+    plt.close(fig)
+
+
 def main() -> None:
     X_train = pd.read_csv(X_TRAIN_PATH)
     X_test = pd.read_csv(X_TEST_PATH)
@@ -252,6 +273,7 @@ def main() -> None:
     plot_metrics(metrics_df)
     plot_scatter(y_test, pred_map)
     plot_residual_hist(y_test, pred_map)
+    plot_predictions_by_variant(y_test, pred_map)
 
     best = metrics_df.iloc[0]
     print("\nBest variant:", best["variant"])
