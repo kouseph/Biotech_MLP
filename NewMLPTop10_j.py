@@ -59,25 +59,30 @@ class StockTop20MLP(nn.Module):
         self.fc3 = nn.Linear(128, 64)
         self.relu3 = nn.ReLU()
         
-        # Output layer: 64 -> 1 (raw logits)
+        # Output layer: 64 -> 1 (continuous regression output)
         self.fc4 = nn.Linear(64, 1)
 
     def forward(self, x):
         x_1 = self.relu1(self.fc1(x))
         x_2 = self.relu2(self.fc2(x_1))
         x_3 = self.relu3(self.fc3(x_2))
-        x_4 = self.fc4(x_3)  # raw logits for BCEWithLogitsLoss
+        x_4 = self.fc4(x_3)  # predicted next-month absolute return
         return x_4
 
 # --- 3. Initialize model, loss, optimizer ---
 model = StockTop20MLP(input_size=X_train_tensor.shape[1])
 
-# Compute pos_weight for top-20% class
-pos_weight = (y_train_tensor == 0).sum() / (y_train_tensor == 1).sum()
-criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
+# Regression objective for continuous target
+criterion = nn.MSELoss()
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 epochs = 1000
+
+# Surface data issues early if they exist upstream
+if torch.isnan(X_train_tensor).any() or torch.isnan(y_train_tensor).any():
+    raise ValueError("NaNs found in training tensors. Regenerate data in loaddata_j.py.")
+if torch.isnan(X_test_tensor).any() or torch.isnan(y_test_tensor).any():
+    raise ValueError("NaNs found in test tensors. Regenerate data in loaddata_j.py.")
 
 # --- 4. Training loop ---
 for epoch in range(epochs):
@@ -186,38 +191,33 @@ print("RMSE:", rmse.item())
 
 
 import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
-# --- 1. Predicted vs True Flags ---
-# visualize = 100
-# plt.figure(figsize=(12,4))
-# plt.plot(preds_label.numpy()[:visualize], 'o', label='Predicted Top-10%')
-# plt.plot(y_test_tensor.numpy()[:visualize], 'x', label='True Top-10%')
-# plt.title("Predicted vs True Top-20% Flags (First 100 Test Samples)")
-# plt.xlabel("Sample Index")
-# plt.ylabel("Top-20% Flag (1=Yes, 0=No)")
+# --- 6. Regression visualizations: actual volatility vs predicted ---
+y_true_np = y_test_tensor.squeeze().numpy()
+y_pred_np = preds.squeeze().numpy()
+
+# View 1: ordered sample window (easy to inspect local fit)
+visualize_n = min(250, len(y_true_np))
+plt.figure(figsize=(12, 4))
+plt.plot(y_true_np[:visualize_n], label="Actual volatility", linewidth=2)
+plt.plot(y_pred_np[:visualize_n], label="Predicted volatility", linewidth=2, alpha=0.85)
+plt.title(f"Actual vs Predicted Volatility (First {visualize_n} Test Samples)")
+plt.xlabel("Test sample index")
+plt.ylabel("Absolute next-month return")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# # View 2: scatter with perfect-fit reference line plt.figure(figsize=(6, 6))
+# plt.scatter(y_true_np, y_pred_np, alpha=0.5, s=20)
+# min_v = float(min(y_true_np.min(), y_pred_np.min()))
+# max_v = float(max(y_true_np.max(), y_pred_np.max()))
+# plt.plot([min_v, max_v], [min_v, max_v], "r--", linewidth=2, label="Perfect fit (y=x)")
+# plt.title("Predicted vs Actual Volatility")
+# plt.xlabel("Actual volatility")
+# plt.ylabel("Predicted volatility")
 # plt.legend()
 # plt.grid(True, alpha=0.3)
+# plt.tight_layout()
 # plt.show()
-
-# # --- 2. Confusion Matrix ---
-# cm = confusion_matrix(y_test_tensor.numpy(), preds_label.numpy())
-# disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0,1])
-# disp.plot(cmap=plt.cm.Blues)
-# plt.title("Top-10% Classification Confusion Matrix")
-# plt.show()
-
-# # # --- 3. Optional: Monthly Accuracy ---
-# # If you have a 'month' column in X_test
-# if 'month' in X_test.columns:
-#     X_test['pred'] = preds_label.numpy()
-#     X_test['true'] = y_test_tensor.numpy()
-#     monthly_acc = X_test.groupby('month').apply(lambda df: (df['pred']==df['true']).mean())
-    
-#     plt.figure(figsize=(12,4))
-#     monthly_acc.plot(marker='o')
-#     plt.title("Monthly Accuracy of Top-20% Prediction")
-#     plt.xlabel("Month")
-#     plt.ylabel("Accuracy")
-#     plt.grid(True, alpha=0.3)
-#     plt.show()
