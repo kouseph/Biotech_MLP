@@ -79,7 +79,7 @@ if torch.isnan(X_test_tensor).any() or torch.isnan(y_test_tensor).any():
 torch.manual_seed(42)
 np.random.seed(42)
 
-def fit_and_predict(X_train_df, X_test_df, y_train_tensor_local, epochs=500, lr=0.001):
+def fit_and_predict(X_train_df, X_test_df, y_train_tensor_local, epochs=1000, lr=0.001):
     X_train_local = torch.tensor(X_train_df.values.astype(np.float32))
     X_test_local = torch.tensor(X_test_df.values.astype(np.float32))
     model_local = StockTop20MLP(input_size=X_train_local.shape[1])

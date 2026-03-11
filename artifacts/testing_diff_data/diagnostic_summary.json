@@ -1,0 +1,26 @@
+{
+  "dynamic_outlier_rate_gt_5std": 0.0005435274934323762,
+  "dynamic_feature_count": 8,
+  "fundamentals_available_rate_test": 0.868922598210813,
+  "recency_days_p50": 48.0,
+  "recency_days_p90": 79.0,
+  "metrics": {
+    "monthly_only": {
+      "rmse": 0.3088225349559186,
+      "mae": 0.15678569674491882,
+      "r2": -0.3246879577636719
+    },
+    "monthly_plus_quarterly_levels": {
+      "rmse": 0.3635274196591187,
+      "mae": 0.18255572021007538,
+      "r2": -0.8355658054351807
+    },
+    "monthly_plus_levels_plus_dynamics": {
+      "rmse": 4421689.152016003,
+      "mae": 759034.0,
+      "r2": -271563886690304.0
+    }
+  },
+  "best_variant": "monthly_only",
+  "interpretation": "Quarterly levels/dynamics can underperform when they are sparse, stale, or noisy, adding dimensionality that increases generalization error. Dynamic transforms are especially sensitive to outliers and imperfect fundamental availability."
+}

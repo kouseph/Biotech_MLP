@@ -272,6 +272,8 @@ dataset = dataset.merge(
     on="Date"
 )
 
+
+
 # Missing-value indicators for fundamentals (let model learn data availability)
 dataset["total_cash_missing"] = dataset["total_cash"].isna().astype(float)
 dataset["lfcf_missing"] = dataset["lfcf"].isna().astype(float)
@@ -424,10 +426,11 @@ y_test = test["target"].values
 print(dataset.head())
 
 
+pd.DataFrame(dataset).to_csv("big_data.csv", index = False)
 
 # Save
-pd.DataFrame(X_train, columns=features).to_csv("X_train.csv", index=False)
-pd.DataFrame(X_test, columns=features).to_csv("X_test.csv", index=False)
-pd.Series(y_train, name="target").to_csv("y_train.csv", index=False)
-pd.Series(y_test, name="target").to_csv("y_test.csv", index=False)
-
+# pd.DataFrame(X_train, columns=features).to_csv("X_train.csv", index=False)
+# pd.DataFrame(X_test, columns=features).to_csv("X_test.csv", index=False)
+# pd.Series(y_train, name="target").to_csv("y_train.csv", index=False)
+# pd.Series(y_test, name="target").to_csv("y_test.csv", index=False)
+#
